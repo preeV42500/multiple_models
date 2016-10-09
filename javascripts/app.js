@@ -1,24 +1,8 @@
 var App = {
-  $body: $("tbody"),
-  template: Handlebars.compile($("#items").html()),
-  render: function() { // render collection of models to the page
-    this.$body.html(this.template({
-      items: this.Items.models
-    }));
-  },
-  removeItem: function(e) {
-    e.preventDefault();
-    var model = this.Items.get(+$(e.target).attr("data-id"));
-    this.Items.remove(model);
-  },
-  bind: function() {
-    this.$body.on("click", "a", this.removeItem.bind(this)); // delegate click event on delete anchor to tbody element
-  },
   init: function() {
     this.Items = new ItemsCollection(items_json); // create new collection seeded with items_json data
-    this.Items.sortByName(); // sort by name
-    this.render();
-    this.bind();
+    this.View = new ItemsView({ collection: this.Items }); // create new view and pass in collection as property
+    this.Items.sortByName(); // sort collection by name
   }
 };
 
@@ -30,6 +14,27 @@ var ItemModel = Backbone.Model.extend({ // item model constructor
   }
 });
 
+var ItemsView = Backbone.View.extend({
+  el: "tbody",
+  events: {
+    "click a": "removeItem" // bind removeItem method to click event
+  },
+  template: Handlebars.compile($("#items").html()),
+  render: function() { // render collection of models to the page
+    this.$el.html(this.template({
+      items: this.collection.toJSON()
+    }));
+  },
+  removeItem: function(e) {
+    e.preventDefault();
+    var model = this.collection.get(+$(e.target).attr("data-id"));
+    this.collection.remove(model);
+  },
+  initialize: function() {
+    this.listenTo(this.collection, "remove reset rerender", this.render); // render view in response to remove, reset, or rerender events from collection
+  }
+});
+
 // Create collection constructor
 var ItemsCollection = Backbone.Collection.extend({
   last_id: 0,
@@ -37,17 +42,15 @@ var ItemsCollection = Backbone.Collection.extend({
   incrementID: function() {
     this.last_id++;
   },
-  sortBy: function(prop) { // sorts collection based on specified property and re-renders it
-    this.models = _(this.models).sortBy(function(model) {
-      return model.attributes[prop];
-    });
-    App.render();
+  sortByProp: function(prop) { // sorts collection based on specified property and re-renders it
+    this.comparator = prop; // change comparator and sort
+    this.sort();
+    this.trigger("rerender"); // trigger rerender event so that view can respond
   },
   sortByName: function() {
-    this.sortBy("name");
+    this.sortByProp("name");
   },
   initialize: function() {
-    this.on("remove reset", App.render.bind(App)); // bind remove and reset event listeners to collection to re-render it to page
     this.on("add", this.sortByName);
   }
 });
@@ -70,8 +73,8 @@ $("form").on("submit", function(e) {
 });
 
 $("th").on("click", function() { // bind click event to table headings to sort table by heading property
-  var prop= $(this).attr("data-prop");
-  App.Items.sortBy(prop);
+  var prop = $(this).attr("data-prop");
+  App.Items.sortByProp(prop);
 });
 
 $("p a").on("click", function(e) { // bind click event to 'Delete All' link
